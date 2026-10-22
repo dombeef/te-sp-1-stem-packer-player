@@ -1,0 +1,877 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stem Packer/Player</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* flat grey surface, 1px rules, mono type, one orange accent */
+:root {
+  --bg: #e4e4e2;
+  --row: #ededeb;
+  --fg: #141414;
+  --dim: #7d7d7a;
+  --rule: #c2c2bf;
+  --accent: #ff5a00;
+  --slot: #c9c9c6;
+  --knob: #f6f6f4;
+  --key: #efefed;
+  --font: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #232323; --row: #2c2c2c; --fg: #e8e8e6; --dim: #8b8b88; --rule: #3e3e3e; --accent: #ff6a1a;
+    --slot: #141414; --knob: #b4b4b1; --key: #3a3a3a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #232323; --row: #2c2c2c; --fg: #e8e8e6; --dim: #8b8b88; --rule: #3e3e3e; --accent: #ff6a1a;
+  --slot: #141414; --knob: #b4b4b1; --key: #3a3a3a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 400 12px/1.5 var(--font); font-variant-numeric: tabular-nums;
+  padding-block: 28px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 960px; margin: 0 auto; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+
+header { display: flex; justify-content: space-between; align-items: center; gap: 8px 16px; flex-wrap: wrap; padding-bottom: 10px; border-bottom: 1px solid var(--fg); }
+.title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 16px; }
+h1 { font-size: 13px; font-weight: 500; margin: 0; }
+.hbtns { display: flex; gap: 6px; }
+.dim { color: var(--dim); }
+button, select { touch-action: manipulation; }
+.btn { border: 1px solid var(--fg); background: none; padding: 3px 12px; cursor: pointer; border-radius: 0; }
+.btn:hover { background: var(--fg); color: var(--bg); }
+.btn:disabled { border-color: var(--rule); color: var(--dim); background: none; cursor: default; }
+.hint { color: var(--dim); margin: 16px 0 0; max-width: 62ch; }
+.hint b { color: var(--fg); font-weight: 500; }
+.on-touch { display: none; }
+@media (hover: none) { .on-touch { display: inline; } .on-mouse { display: none; } }
+
+/* page-wide drop target */
+.dropzone {
+  position: fixed; inset: 8px; z-index: 20; pointer-events: none;
+  border: 1px dashed var(--accent); display: flex; align-items: flex-end; justify-content: center;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+}
+.dropzone span { background: var(--accent); color: #fff; padding: 4px 10px; }
+
+/* popups */
+dialog {
+  width: min(560px, calc(100% - 32px)); max-height: calc(100% - 48px); padding: 0;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--fg); border-radius: 0;
+}
+dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
+.dlg-head {
+  position: sticky; top: 0; background: var(--bg); display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 16px; border-bottom: 1px solid var(--fg);
+}
+.dlg-head h2 { font-size: 12px; font-weight: 500; margin: 0; }
+.dlg-close { border: 0; background: none; width: 32px; height: 32px; margin: -8px -10px -8px 0; cursor: pointer; font-size: 15px; color: var(--dim); }
+.dlg-close:hover { color: var(--fg); }
+.dlg-body { padding: 4px 16px 18px; }
+.dlg-body h3 { font-size: 12px; font-weight: 500; margin: 18px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--rule); }
+.dlg-body p { margin: 6px 0; }
+.dlg-body ol, .dlg-body ul { margin: 6px 0; padding-left: 0; list-style: none; display: grid; gap: 6px; }
+.dlg-body li { display: grid; grid-template-columns: 2.4ch minmax(0, 1fr); }
+.dlg-body li::before { color: var(--dim); }
+.dlg-body ol { counter-reset: n; }
+.dlg-body ol li::before { counter-increment: n; content: counter(n); }
+.dlg-body ul li::before { content: "–"; }
+.dlg-body a { color: var(--accent); }
+.dlg-body kbd { font: inherit; border: 1px solid var(--rule); padding: 0 4px; }
+.chmap { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; margin: 8px 0; }
+.chmap div { background: var(--row); padding: 4px 6px; }
+.chmap b { font-weight: 500; display: block; }
+@media (max-width: 420px) { .chmap { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+section { padding-block: 18px; border-bottom: 1px solid var(--rule); }
+.label { color: var(--dim); margin-bottom: 12px; }
+
+.grid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 760px) { .stems.grid4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 420px) { .stems.grid4 { grid-template-columns: minmax(0, 1fr); } }
+
+/* stem columns */
+.stem { min-width: 0; display: grid; gap: 6px; align-content: start; padding: 6px; margin: -6px; outline: 1px dashed transparent; }
+.stem.over { outline-color: var(--accent); }
+.stem-head { display: flex; justify-content: space-between; padding-bottom: 6px; border-bottom: 1px solid var(--fg); }
+.stem-num { font-weight: 500; }
+.files { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.file {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 0 4px;
+  background: var(--row); padding: 4px 2px 4px 6px; cursor: grab;
+}
+.file.dragging { opacity: 0.35; }
+.fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta { grid-column: 1; color: var(--dim); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta .err { color: var(--accent); }
+.move {
+  grid-row: 1 / span 2; grid-column: 2; appearance: none; -webkit-appearance: none;
+  background: transparent; border: 1px solid var(--rule); border-radius: 0;
+  padding: 1px 6px; cursor: pointer; text-align: center;
+}
+.x { grid-row: 1 / span 2; grid-column: 3; border: 0; background: none; color: var(--dim); width: 22px; height: 22px; cursor: pointer; }
+.x:hover { color: var(--fg); }
+.label-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.label-row .label { margin: 0; }
+.add {
+  border: 1px dashed var(--rule); background: none; padding: 7px; text-align: left; color: var(--dim); cursor: pointer;
+}
+.add:hover { border-color: var(--fg); color: var(--fg); }
+.sum { color: var(--dim); font-size: 10.5px; }
+
+/* transport */
+.transport { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+.play {
+  width: 36px; height: 36px; border: 0; border-radius: 50%; background: var(--accent); color: #fff;
+  display: grid; place-items: center; cursor: pointer;
+}
+.play:disabled { background: var(--rule); color: var(--dim); cursor: default; }
+.play svg { width: 12px; height: 12px; fill: currentColor; }
+#seek { -webkit-appearance: none; appearance: none; width: 100%; height: 20px; margin: 0; background: transparent; cursor: pointer; }
+#seek:disabled { cursor: default; opacity: 0.4; }
+#seek::-webkit-slider-runnable-track { height: 1px; background: var(--fg); }
+#seek::-webkit-slider-thumb { -webkit-appearance: none; width: 4px; height: 16px; margin-top: -7.5px; background: var(--accent); border: 0; }
+#seek::-moz-range-track { height: 1px; background: var(--fg); }
+#seek::-moz-range-thumb { width: 4px; height: 16px; background: var(--accent); border: 0; border-radius: 0; }
+@media (max-width: 480px) {
+  .transport { grid-template-columns: auto 1fr auto; }
+  #seek { grid-column: 1 / -1; grid-row: 2; }
+}
+
+/* mixer: slot + knob, led, hold-to-solo key */
+/* knob centres sit ~120px apart (80% of the 150px fader height); narrower on phones */
+.mixer { margin-top: 28px; display: flex; justify-content: center; gap: clamp(28px, calc((100vw - 32px - 160px) / 3), 80px); }
+.strip { width: 40px; display: grid; justify-items: center; gap: 16px; }
+.strip.empty .fader, .strip.empty .solo { opacity: 0.45; }
+.fader {
+  position: relative; width: 22px; height: 150px; border-radius: 11px;
+  background: var(--slot); box-shadow: inset 0 1px 2px rgba(0,0,0,.25);
+  cursor: ns-resize; touch-action: none;
+}
+.fader .knob {
+  position: absolute; left: 2px; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--knob); box-shadow: 0 1px 2px rgba(0,0,0,.35), inset 0 -1px 0 rgba(0,0,0,.12);
+}
+.fader:focus-visible { outline-offset: 3px; }
+.led {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--rule);
+  transition: background-color 60ms linear, box-shadow 60ms linear;
+}
+.led.on { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+.solo {
+  width: 18px; height: 34px; border-radius: 3px; padding: 0; cursor: pointer;
+  background: var(--key); border: 1px solid var(--rule);
+  box-shadow: 0 2px 0 var(--rule); touch-action: none; user-select: none; -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.solo.down { transform: translateY(2px); box-shadow: 0 0 0 var(--rule); border-color: var(--accent); }
+
+/* export */
+.fields { display: flex; flex-wrap: wrap; align-items: end; gap: 12px 16px; }
+.field { display: grid; gap: 4px; color: var(--dim); }
+.field input {
+  color: var(--fg); background: var(--row); border: 0; border-bottom: 1px solid var(--fg); border-radius: 0;
+  padding: 6px 8px; outline-offset: 0;
+}
+.field.grow { flex: 0 1 220px; min-width: 140px; }
+#baseName { width: 100%; }
+#bpm { width: 80px; -moz-appearance: textfield; appearance: textfield; }
+#bpm::-webkit-inner-spin-button, #bpm::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.check { display: flex; gap: 8px; align-items: center; cursor: pointer; padding-bottom: 6px; }
+.check input { appearance: none; -webkit-appearance: none; width: 12px; height: 12px; margin: 0; border: 1px solid var(--fg); cursor: pointer; }
+.check input:checked { background: var(--accent); border-color: var(--accent); }
+.build {
+  margin-left: auto; border: 0; background: var(--fg); color: var(--bg); padding: 8px 18px; cursor: pointer;
+}
+.build:disabled { background: var(--rule); color: var(--dim); cursor: default; }
+.out-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; margin-top: 14px; }
+.status { min-width: 0; overflow-wrap: anywhere; }
+.status.err { color: var(--accent); }
+.status a { color: var(--accent); }
+@media (max-width: 480px) {
+  .build { margin-left: 0; width: 100%; padding: 12px; }
+  .field.grow { flex: 1 1 140px; }
+}
+/* bigger touch targets on phones and tablets */
+@media (pointer: coarse) {
+  .btn { padding: 7px 14px; }
+  .file { padding: 6px 2px 6px 8px; }
+  .x { width: 34px; height: 34px; font-size: 15px; }
+  .move { padding: 5px 10px; }
+  .add { padding: 11px 8px; }
+  .solo { width: 22px; height: 40px; }
+  .field input { font-size: 16px; } /* stops iOS zooming in on focus */
+  .check { padding-block: 6px 10px; }
+  .check input { width: 16px; height: 16px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="title">
+      <h1>stem packer/player</h1>
+      <span class="dim">s24 / 48 khz / 8 ch wav</span>
+    </div>
+    <div class="hbtns">
+      <button class="btn" id="helpBtn">help</button>
+      <button class="btn" id="aboutBtn">about</button>
+    </div>
+  </header>
+
+  <section>
+    <div class="label-row">
+      <span class="label">stems</span>
+      <button class="btn" id="importBtn" title="8-channel stem file, or files to spread across stems 1–4">import</button>
+    </div>
+    <div class="stems grid4" id="stems"></div>
+    <p class="hint" id="hint">
+      <span class="on-mouse"><b>drop audio files anywhere</b> on this page or press <b>import</b> to begin.</span>
+      <span class="on-touch">press <b>import</b> to begin.</span>
+      one 8-channel stem file splits into stems 1–4. other files are spread across them, one per stem.
+    </p>
+  </section>
+
+  <section>
+    <div class="label">preview</div>
+    <div class="transport">
+      <button class="play" id="playBtn" disabled aria-label="Play"></button>
+      <span id="timeNow">0:00.00</span>
+      <input type="range" id="seek" min="0" max="0" step="0.01" value="0" disabled aria-label="Song position">
+      <span class="dim" id="timeTotal">0:00.00</span>
+    </div>
+    <div class="mixer" id="mixer"></div>
+  </section>
+
+  <section style="border-bottom:0">
+    <div class="label">export</div>
+    <div class="fields">
+      <label class="field grow" for="baseName">name
+        <input type="text" id="baseName" value="stems" autocomplete="off" spellcheck="false">
+      </label>
+      <label class="field" for="bpm">bpm
+        <input type="number" id="bpm" min="20" max="400" step="0.01" placeholder="—" inputmode="decimal">
+      </label>
+      <label class="check" for="protect"><input type="checkbox" id="protect" checked> prevent clipping</label>
+      <button class="build" id="buildBtn" disabled>build wav</button>
+    </div>
+    <div class="out-row">
+      <span class="dim" id="outName">stems.wav</span>
+      <span class="status" id="status" role="status"></span>
+    </div>
+  </section>
+</div>
+
+<div class="dropzone" id="dropzone" hidden><span>drop to import</span></div>
+
+<dialog id="helpDlg" aria-labelledby="helpTitle">
+  <div class="dlg-head"><h2 id="helpTitle">help</h2><button class="dlg-close" aria-label="Close">×</button></div>
+  <div class="dlg-body">
+    <h3>packing stems</h3>
+    <ol>
+      <li><span><b>load audio.</b> drop files anywhere on the page, press import, or use + add on a single stem. wav, mp3, aiff, flac and most other formats work.</span></li>
+      <li><span><b>arrange.</b> each column is one stem. files in the same column are mixed together. drag a file to another column, or change the number next to it.</span></li>
+      <li><span><b>check it.</b> press play and move the faders to hear the balance.</span></li>
+      <li><span><b>export.</b> enter a name and an optional bpm (added to the filename, e.g. song_120bpm.wav), then press build wav.</span></li>
+      <li><span><b>load it onto your sp-1</b> with the stem loader at <a href="https://solderless.engineering/" target="_blank" rel="noopener">solderless.engineering</a>. it runs in desktop chrome or edge.</span></li>
+    </ol>
+    <p>the result is one signed 24-bit, 48 khz, 8-channel wav:</p>
+    <div class="chmap">
+      <div><b>stem 1</b>ch 1 / 2</div><div><b>stem 2</b>ch 3 / 4</div>
+      <div><b>stem 3</b>ch 5 / 6</div><div><b>stem 4</b>ch 7 / 8</div>
+    </div>
+    <p>mp3 and mono files become stereo, and everything is resampled to 48 khz. all stems start at 0:00. shorter stems are padded with silence.</p>
+
+    <h3>playing stems</h3>
+    <p>import or drop an 8-channel stem file and it splits back into its four stems. the name and bpm are read from the filename.</p>
+    <ul>
+      <li><span><b>play / pause:</b> the orange button, or <kbd>space</kbd>.</span></li>
+      <li><span><b>move through the song:</b> drag the line.</span></li>
+      <li><span><b>faders:</b> drag a knob, or tap the slot to jump there. double-click resets to full.</span></li>
+      <li><span><b>keys:</b> hold one to hear only that stem. hold several to hear just those.</span></li>
+      <li><span><b>lights:</b> on while that stem is making sound.</span></li>
+    </ul>
+
+    <h3>good to know</h3>
+    <ul>
+      <li><span>faders and keys only change the preview. the exported file is always full level.</span></li>
+      <li><span>prevent clipping turns a stem down only when mixing files pushes it over 0 dbfs.</span></li>
+      <li><span>everything runs in your browser. nothing is uploaded.</span></li>
+      <li><span>on iphone, turn off silent mode to hear the preview.</span></li>
+    </ul>
+  </div>
+</dialog>
+
+<dialog id="aboutDlg" aria-labelledby="aboutTitle">
+  <div class="dlg-head"><h2 id="aboutTitle">about</h2><button class="dlg-close" aria-label="Close">×</button></div>
+  <div class="dlg-body">
+    <h3>stem packer/player</h3>
+    <p>made by <a href="https://github.com/dombeef" target="_blank" rel="noopener">dombeef</a>.</p>
+    <p>special thanks to <a href="https://solderless.engineering/" target="_blank" rel="noopener">solderless.engineering</a> for their wonderful tools to upload custom stems to the sp-1.</p>
+  </div>
+</dialog>
+
+<input type="file" id="picker" accept="audio/*,.wav,.mp3,.aif,.aiff,.flac,.m4a,.ogg" multiple hidden>
+<input type="file" id="importPicker" accept="audio/*,.wav,.mp3,.aif,.aiff,.flac,.m4a,.ogg" multiple hidden>
+
+<script>
+(() => {
+  const SR = 48000;
+  const NUM_STEMS = 4;
+  const OUT_CH = NUM_STEMS * 2;
+  const MOVE_TYPE = "application/x-stem-file";
+  const stems = Array.from({ length: NUM_STEMS }, () => []); // {id, name, buffer, srcCh, isMp3, error}
+  let nextId = 1, pickTarget = 0, decodeCtx = null, lastUrl = null;
+
+  const $ = (id) => document.getElementById(id);
+  const stemsEl = $("stems"), picker = $("picker"), buildBtn = $("buildBtn"), statusEl = $("status");
+  const playBtn = $("playBtn"), seek = $("seek");
+
+  // An OfflineAudioContext at 48 kHz makes decodeAudioData resample to 48 kHz.
+  const ctx = () => decodeCtx || (decodeCtx = new OfflineAudioContext(2, 1, SR));
+  const fmtTime = (sec) => {
+    const m = Math.floor(sec / 60), s = sec - m * 60;
+    return `${m}:${s.toFixed(2).padStart(5, "0")}`;
+  };
+  const setStatus = (text, kind = "") => { statusEl.className = "status" + (kind ? " " + kind : ""); statusEl.textContent = text; };
+  const clearResult = () => { if (lastUrl) { URL.revokeObjectURL(lastUrl); lastUrl = null; } };
+
+  // ---------- stems ----------
+  function renderStems() {
+    stemsEl.innerHTML = "";
+    stems.forEach((files, i) => {
+      const col = document.createElement("div");
+      col.className = "stem";
+      const ready = files.filter(f => f.buffer);
+      const longest = Math.max(0, ...ready.map(f => f.buffer.duration));
+      col.innerHTML = `
+        <div class="stem-head"><span class="stem-num">0${i + 1}</span><span class="dim">ch ${i * 2 + 1}/${i * 2 + 2}</span></div>
+        <ul class="files"></ul>
+        <button class="add">+ add</button>
+        ${files.length > 1 ? `<div class="sum">${files.length} mixed · ${fmtTime(longest)}</div>` : ""}`;
+      const list = col.querySelector(".files");
+
+      files.forEach((f) => {
+        let meta;
+        if (f.error) meta = `<span class="err">${f.error}</span>`;
+        else if (!f.buffer) meta = "decoding…";
+        else {
+          const p = [fmtTime(f.buffer.duration)];
+          if (f.split) p.push("from 8ch");
+          if (f.isMp3) p.push("mp3");
+          if (f.srcCh === 1) p.push("mono→st");
+          else if (f.srcCh > 2) p.push(`${f.srcCh}ch→st`);
+          meta = p.join(" · ");
+        }
+        const opts = stems.map((_, s) => `<option value="${s}"${s === i ? " selected" : ""}>${s + 1}</option>`).join("");
+        const li = document.createElement("li");
+        li.className = "file";
+        li.draggable = true;
+        li.innerHTML = `<span class="fname"></span><span class="meta">${meta}</span>
+          <select class="move" aria-label="Move to stem" title="Move to stem">${opts}</select>
+          <button class="x" aria-label="Remove file" title="Remove">×</button>`;
+        li.querySelector(".fname").textContent = f.name;
+        li.querySelector(".fname").title = f.name;
+        li.querySelector(".move").addEventListener("change", (e) => moveFile(f.id, +e.target.value));
+        li.querySelector(".x").addEventListener("click", () => {
+          stems[i] = stems[i].filter(x => x.id !== f.id);
+          clearResult(); renderStems();
+        });
+        li.addEventListener("dragstart", (e) => {
+          e.dataTransfer.setData(MOVE_TYPE, String(f.id));
+          e.dataTransfer.effectAllowed = "move";
+          li.classList.add("dragging");
+        });
+        li.addEventListener("dragend", () => li.classList.remove("dragging"));
+        list.appendChild(li);
+      });
+
+      col.querySelector(".add").addEventListener("click", () => { pickTarget = i; picker.value = ""; picker.click(); });
+      col.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = e.dataTransfer.types.includes(MOVE_TYPE) ? "move" : "copy";
+        col.classList.add("over");
+      });
+      col.addEventListener("dragleave", (e) => { if (!col.contains(e.relatedTarget)) col.classList.remove("over"); });
+      col.addEventListener("drop", (e) => {
+        e.preventDefault(); col.classList.remove("over");
+        const moving = e.dataTransfer.getData(MOVE_TYPE);
+        if (moving) moveFile(+moving, i); else addFiles(i, e.dataTransfer.files);
+      });
+      stemsEl.appendChild(col);
+    });
+    updateState();
+  }
+
+  function moveFile(id, target) {
+    const from = stems.findIndex(l => l.some(f => f.id === id));
+    if (from < 0 || from === target) return;
+    const entry = stems[from].find(f => f.id === id);
+    stems[from] = stems[from].filter(f => f.id !== id);
+    stems[target].push(entry);
+    clearResult(); renderStems();
+  }
+
+  function addFiles(stemIdx, fileList) {
+    const files = [...fileList];
+    if (!files.length) return;
+    clearResult();
+    files.forEach((file) => {
+      const entry = { id: nextId++, name: file.name, buffer: null, srcCh: 0, error: null,
+        isMp3: /\.mp3$/i.test(file.name) || file.type === "audio/mpeg" };
+      stems[stemIdx].push(entry);
+      file.arrayBuffer()
+        .then((ab) => ctx().decodeAudioData(ab))
+        .then((buf) => { entry.buffer = buf; entry.srcCh = buf.numberOfChannels; })
+        .catch(() => { entry.error = "can't decode"; })
+        .finally(renderStems);
+    });
+    renderStems();
+  }
+
+  // Import replaces everything. An 8-channel file is split back into stems 1–4;
+  // other files are spread across stems in name order (a 5th file mixes into stem 1, and so on).
+  async function importFiles(fileList) {
+    const files = [...fileList].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    if (!files.length) return;
+    const importBtn = $("importBtn");
+    importBtn.disabled = true;
+    if (playing) pause();
+    setStatus("importing…");
+    const decoded = await Promise.all(files.map((file) =>
+      file.arrayBuffer().then((ab) => ctx().decodeAudioData(ab))
+        .then((buf) => ({ file, buf }), () => ({ file, buf: null }))));
+
+    clearResult();
+    stems.forEach((_, s) => { stems[s] = []; });
+    offset = 0;
+    let slot = 0;
+    const failed = [];
+    for (const { file, buf } of decoded) {
+      if (!buf) { failed.push(file.name); continue; }
+      if (buf.numberOfChannels === OUT_CH) {
+        for (let s = 0; s < NUM_STEMS; s++) {
+          const l = buf.getChannelData(s * 2), r = buf.getChannelData(s * 2 + 1);
+          let silent = true;
+          for (let k = 0; k < l.length; k++) { if (l[k] !== 0 || r[k] !== 0) { silent = false; break; } }
+          if (silent) continue; // leave unused stems empty
+          const b = new AudioBuffer({ numberOfChannels: 2, length: buf.length, sampleRate: buf.sampleRate });
+          b.copyToChannel(l, 0); b.copyToChannel(r, 1);
+          stems[s].push({ id: nextId++, name: file.name, buffer: b, srcCh: 2, error: null, isMp3: false, split: true });
+        }
+        fillNameFrom(file.name);
+      } else {
+        stems[slot % NUM_STEMS].push({ id: nextId++, name: file.name, buffer: buf, srcCh: buf.numberOfChannels,
+          error: null, isMp3: /\.mp3$/i.test(file.name) || file.type === "audio/mpeg" });
+        slot++;
+      }
+    }
+    importBtn.disabled = false;
+    renderStems();
+    if (failed.length) setStatus(`can't decode: ${failed.join(", ")}`, "err");
+  }
+
+  // "track_120bpm.wav" → name "track", bpm 120
+  function fillNameFrom(fileName) {
+    let base = fileName.replace(/\.[^.]+$/, "");
+    const m = base.match(/[_\s-]+(\d+(?:\.\d+)?)\s*bpm$/i);
+    $("bpm").value = m ? m[1] : "";
+    if (m) base = base.slice(0, m.index);
+    $("baseName").value = base;
+    refreshName();
+  }
+
+  const importPicker = $("importPicker");
+  $("importBtn").addEventListener("click", () => { importPicker.value = ""; importPicker.click(); });
+  importPicker.addEventListener("change", () => importFiles(importPicker.files));
+
+  picker.addEventListener("change", () => addFiles(pickTarget, picker.files));
+  window.addEventListener("dragover", (e) => e.preventDefault());
+  // Files dropped outside a stem column are imported. Column drops already called preventDefault.
+  window.addEventListener("drop", (e) => {
+    showDropzone(false);
+    if (e.defaultPrevented) return;
+    e.preventDefault();
+    if (e.dataTransfer.files.length) importFiles(e.dataTransfer.files);
+  });
+  // Frame the page while files are dragged over it, so it's clear the drop lands anywhere.
+  const dropzone = $("dropzone");
+  let dragDepth = 0;
+  const showDropzone = (on) => { if (!on) dragDepth = 0; dropzone.hidden = !on; };
+  const isFileDrag = (e) => e.dataTransfer && [...e.dataTransfer.types].includes("Files");
+  window.addEventListener("dragenter", (e) => { if (isFileDrag(e)) { dragDepth++; showDropzone(true); } });
+  window.addEventListener("dragleave", (e) => { if (isFileDrag(e) && --dragDepth <= 0) showDropzone(false); });
+  window.addEventListener("dragend", () => showDropzone(false));
+
+  const readyLength = () => Math.max(0, ...stems.flat().filter(f => f.buffer).map(f => f.buffer.length));
+
+  function updateState() {
+    previewFilesChanged();
+    const pending = stems.flat().some(f => !f.buffer && !f.error);
+    const len = readyLength();
+    buildBtn.disabled = !len || pending;
+    $("hint").hidden = stems.some(l => l.length);
+    if (pending) setStatus("decoding…");
+    else if (!len) setStatus("no audio loaded");
+    else if (!lastUrl) setStatus(`${fmtTime(len / SR)} · ${(len * OUT_CH * 3 / 1048576).toFixed(1)} mb`);
+  }
+
+  function outputName() {
+    let base = $("baseName").value.trim().replace(/\.wav$/i, "") || "stems";
+    base = base.replace(/[\\/:*?"<>|]+/g, "-");
+    const bpm = parseFloat($("bpm").value);
+    if (isFinite(bpm) && bpm > 0) base += `_${+bpm.toFixed(2)}bpm`;
+    return base + ".wav";
+  }
+  const refreshName = () => { $("outName").textContent = outputName(); };
+  $("baseName").addEventListener("input", refreshName);
+  $("bpm").addEventListener("input", refreshName);
+
+  // ---------- mixing ----------
+  function mixStem(files, len, protect) {
+    const L = new Float32Array(len), R = new Float32Array(len);
+    for (const f of files) {
+      if (!f.buffer) continue;
+      const l = f.buffer.getChannelData(0);
+      const r = f.buffer.numberOfChannels > 1 ? f.buffer.getChannelData(1) : l; // mono → both sides
+      const n = Math.min(len, l.length);
+      for (let i = 0; i < n; i++) { L[i] += l[i]; R[i] += r[i]; }
+    }
+    let peak = 0;
+    for (let i = 0; i < len; i++) {
+      const a = Math.abs(L[i]), b = Math.abs(R[i]);
+      if (a > peak) peak = a;
+      if (b > peak) peak = b;
+    }
+    if (peak > 1 && protect) {
+      const g = 0.999 / peak;
+      for (let i = 0; i < len; i++) { L[i] *= g; R[i] *= g; }
+    }
+    return { L, R, peak };
+  }
+
+  // ---------- wav ----------
+  function wavHeader(frames) {
+    const dataBytes = frames * OUT_CH * 3;
+    const h = new DataView(new ArrayBuffer(68));
+    const str = (o, s) => { for (let i = 0; i < s.length; i++) h.setUint8(o + i, s.charCodeAt(i)); };
+    str(0, "RIFF"); h.setUint32(4, 60 + dataBytes, true); str(8, "WAVE");
+    str(12, "fmt "); h.setUint32(16, 40, true);
+    h.setUint16(20, 0xFFFE, true);           // WAVE_FORMAT_EXTENSIBLE (needed for >2 channels)
+    h.setUint16(22, OUT_CH, true);
+    h.setUint32(24, SR, true);
+    h.setUint32(28, SR * OUT_CH * 3, true);  // byte rate
+    h.setUint16(32, OUT_CH * 3, true);       // block align
+    h.setUint16(34, 24, true);               // bits per sample
+    h.setUint16(36, 22, true);               // extension size
+    h.setUint16(38, 24, true);               // valid bits
+    h.setUint32(40, 0x63F, true);            // channel mask (8 ch, same as ffmpeg's default)
+    [0x01,0x00,0x00,0x00,0x00,0x00,0x10,0x00,0x80,0x00,0x00,0xAA,0x00,0x38,0x9B,0x71] // PCM subformat
+      .forEach((b, i) => h.setUint8(44 + i, b));
+    str(60, "data"); h.setUint32(64, dataBytes, true);
+    return h.buffer;
+  }
+
+  const tick = () => new Promise(r => setTimeout(r, 0));
+
+  async function build() {
+    const len = readyLength();
+    if (!len) return;
+    buildBtn.disabled = true;
+    clearResult();
+    if (len * OUT_CH * 3 + 60 > 0xFFFFFFFF) {
+      setStatus("too long for wav (max ~62 min)", "err");
+      buildBtn.disabled = false; return;
+    }
+    setStatus("mixing…");
+    await tick();
+    const protect = $("protect").checked;
+    const channels = [], notes = [];
+    for (let s = 0; s < NUM_STEMS; s++) {
+      const { L, R, peak } = mixStem(stems[s], len, protect);
+      if (peak > 1) notes.push(`0${s + 1} ${protect ? "−" : "clips +"}${(20 * Math.log10(peak)).toFixed(1)} db`);
+      channels.push(L, R);
+      await tick();
+    }
+
+    const parts = [wavHeader(len)];
+    const CHUNK = 48000;
+    for (let start = 0; start < len; start += CHUNK) {
+      const end = Math.min(len, start + CHUNK);
+      const bytes = new Uint8Array((end - start) * OUT_CH * 3);
+      let o = 0;
+      for (let i = start; i < end; i++) {
+        for (let c = 0; c < OUT_CH; c++) {
+          let x = channels[c][i];
+          x = x > 1 ? 1 : x < -1 ? -1 : x;
+          const v = x < 0 ? Math.round(x * 8388608) : Math.round(x * 8388607);
+          bytes[o++] = v & 0xFF; bytes[o++] = (v >> 8) & 0xFF; bytes[o++] = (v >> 16) & 0xFF;
+        }
+      }
+      parts.push(bytes);
+      if ((start / CHUNK) % 8 === 0) { setStatus(`writing ${Math.round(end / len * 100)}%`); await tick(); }
+    }
+
+    const blob = new Blob(parts, { type: "audio/wav" });
+    lastUrl = URL.createObjectURL(blob);
+    const name = outputName();
+    const a = document.createElement("a");
+    a.href = lastUrl; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+
+    setStatus("");
+    const link = document.createElement("a");
+    link.href = lastUrl; link.download = name; link.textContent = "download";
+    statusEl.append(`done · ${(blob.size / 1048576).toFixed(1)} mb${notes.length ? " · " + notes.join(", ") : ""} · `, link);
+    buildBtn.disabled = false;
+  }
+
+  buildBtn.addEventListener("click", () => {
+    build().catch((e) => {
+      console.error(e);
+      setStatus("build failed, likely out of memory. try shorter stems.", "err");
+      buildBtn.disabled = false;
+    });
+  });
+
+  // ---------- preview ----------
+  const ICON_PLAY = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 1v10l8.5-5z"/></svg>';
+  const ICON_PAUSE = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 1h3v10H2zM7 1h3v10H7z"/></svg>';
+  const levels = Array(NUM_STEMS).fill(1);
+  const soloed = Array(NUM_STEMS).fill(false); // held keys
+  let ac = null, gainNodes = [], analysers = [], meterBuf = null, sources = [], pvBufs = null, pvDirty = true;
+  let playing = false, startAt = 0, offset = 0, duration = 0, scrubbing = false, raf = 0;
+  const leds = [], releasers = [];
+  window.addEventListener("blur", () => releasers.forEach(r => r()));
+
+  const faderGain = (v) => v * v;
+
+  function audio() {
+    if (!ac) {
+      ac = new AudioContext();
+      gainNodes = levels.map(() => {
+        const g = ac.createGain();
+        const an = ac.createAnalyser();
+        an.fftSize = 1024;
+        g.connect(an); an.connect(ac.destination);
+        analysers.push(an);
+        return g;
+      });
+      meterBuf = new Float32Array(1024);
+      applyGains(true);
+    }
+    return ac;
+  }
+  function applyGains(instant) {
+    if (!ac) return;
+    const anySolo = soloed.some(Boolean);
+    gainNodes.forEach((g, i) => {
+      const t = anySolo && !soloed[i] ? 0 : faderGain(levels[i]);
+      if (instant) g.gain.value = t; else g.gain.setTargetAtTime(t, ac.currentTime, 0.008);
+    });
+  }
+  // LEDs read the signal after the fader and solo, so they show what you actually hear.
+  function updateLeds() {
+    leds.forEach((led, i) => {
+      let on = false;
+      if (playing && analysers[i]) {
+        analysers[i].getFloatTimeDomainData(meterBuf);
+        let sum = 0;
+        for (let k = 0; k < meterBuf.length; k++) sum += meterBuf[k] * meterBuf[k];
+        on = Math.sqrt(sum / meterBuf.length) > 0.003; // about −50 dBFS
+      }
+      led.classList.toggle("on", on);
+    });
+  }
+  function buildPreview() {
+    const len = readyLength();
+    pvDirty = false;
+    if (!len) { pvBufs = null; return; }
+    const protect = $("protect").checked;
+    pvBufs = stems.map((files) => {
+      if (!files.some(f => f.buffer)) return null;
+      const { L, R } = mixStem(files, len, protect);
+      const b = new AudioBuffer({ numberOfChannels: 2, length: len, sampleRate: SR });
+      b.copyToChannel(L, 0); b.copyToChannel(R, 1);
+      return b;
+    });
+  }
+  const position = () => playing ? Math.max(0, Math.min(duration, ac.currentTime - startAt)) : offset;
+  function stopSources() {
+    sources.forEach((s) => { try { s.stop(); } catch (_) {} s.disconnect(); });
+    sources = [];
+  }
+  function startSources(at) {
+    stopSources();
+    const t = ac.currentTime + 0.03;
+    pvBufs.forEach((b, i) => {
+      if (!b) return;
+      const s = ac.createBufferSource();
+      s.buffer = b; s.connect(gainNodes[i]); s.start(t, at);
+      sources.push(s);
+    });
+    startAt = t - at;
+  }
+  async function play() {
+    audio();
+    if (ac.state === "suspended") await ac.resume();
+    if (pvDirty) buildPreview();
+    if (!pvBufs) return;
+    if (offset >= duration - 0.01) offset = 0;
+    startSources(offset);
+    playing = true; updatePlayBtn();
+    cancelAnimationFrame(raf); raf = requestAnimationFrame(loop);
+  }
+  function pause() {
+    offset = position(); stopSources(); playing = false;
+    cancelAnimationFrame(raf); updatePlayBtn(); updateTransport(); updateLeds();
+  }
+  function seekTo(sec) {
+    offset = Math.max(0, Math.min(duration, sec));
+    if (playing) startSources(offset);
+    updateTransport();
+  }
+  function loop() {
+    if (!playing) return;
+    if (position() >= duration) { pause(); offset = 0; updateTransport(); return; }
+    updateTransport();
+    updateLeds();
+    raf = requestAnimationFrame(loop);
+  }
+  function updateTransport() {
+    const p = scrubbing ? +seek.value : position();
+    $("timeNow").textContent = fmtTime(p);
+    $("timeTotal").textContent = fmtTime(duration);
+    if (!scrubbing) seek.value = p;
+  }
+  function updatePlayBtn() {
+    playBtn.innerHTML = playing ? ICON_PAUSE : ICON_PLAY;
+    playBtn.setAttribute("aria-label", playing ? "Pause" : "Play");
+  }
+  function previewFilesChanged() {
+    pvDirty = true;
+    const len = readyLength();
+    duration = len / SR;
+    seek.max = duration;
+    playBtn.disabled = seek.disabled = !len;
+    if (!len) { if (playing) pause(); offset = 0; }
+    else if (playing) { const p = Math.min(position(), duration); buildPreview(); startSources(p); }
+    else if (offset > duration) offset = 0;
+    document.querySelectorAll(".strip").forEach((el, i) => el.classList.toggle("empty", !stems[i].some(f => f.buffer)));
+    updateTransport();
+  }
+
+  // custom vertical faders
+  function renderMixer() {
+    const mixer = $("mixer");
+    levels.forEach((_, i) => {
+      const strip = document.createElement("div");
+      strip.className = "strip empty";
+      strip.innerHTML = `
+        <div class="fader" role="slider" tabindex="0" aria-label="Stem ${i + 1} level"
+          aria-valuemin="0" aria-valuemax="100" title="double-click to reset"><div class="knob"></div></div>
+        <span class="led" aria-hidden="true"></span>
+        <button class="solo" aria-label="Hold to solo stem ${i + 1}" title="hold to solo"></button>`;
+      const fader = strip.querySelector(".fader"), knob = strip.querySelector(".knob"), solo = strip.querySelector(".solo");
+      leds[i] = strip.querySelector(".led");
+      // slot is 150px tall, knob is 18px with 2px inset, so travel is 128px
+      const PAD = 2, KNOB = 18, TRAVEL = 150 - KNOB - PAD * 2;
+      let grab = 0;
+      const set = (v) => {
+        levels[i] = Math.max(0, Math.min(1, v));
+        knob.style.bottom = `${PAD + levels[i] * TRAVEL}px`;
+        const g = faderGain(levels[i]);
+        fader.setAttribute("aria-valuenow", Math.round(levels[i] * 100));
+        fader.setAttribute("aria-valuetext", g <= 0.0001 ? "off" : `${(20 * Math.log10(g)).toFixed(1)} dB`);
+        applyGains();
+      };
+      const fromPointer = (e) => {
+        const r = fader.getBoundingClientRect();
+        set(1 - (e.clientY - grab - r.top - PAD - KNOB / 2) / TRAVEL);
+      };
+      fader.addEventListener("pointerdown", (e) => {
+        fader.setPointerCapture(e.pointerId);
+        // grabbing the knob keeps it under the finger; clicking the slot jumps to that spot
+        if (e.target === knob) {
+          const k = knob.getBoundingClientRect();
+          grab = e.clientY - (k.top + k.height / 2);
+        } else { grab = 0; fromPointer(e); }
+      });
+      fader.addEventListener("pointermove", (e) => { if (fader.hasPointerCapture(e.pointerId)) fromPointer(e); });
+      fader.addEventListener("dblclick", () => set(1));
+      fader.addEventListener("keydown", (e) => {
+        const step = { ArrowUp: 0.02, ArrowRight: 0.02, ArrowDown: -0.02, ArrowLeft: -0.02, PageUp: 0.1, PageDown: -0.1 }[e.key];
+        if (step) { e.preventDefault(); set(levels[i] + step); }
+        else if (e.key === "Home") { e.preventDefault(); set(0); }
+        else if (e.key === "End") { e.preventDefault(); set(1); }
+      });
+      // momentary solo: only while held
+      const press = (on) => {
+        if (soloed[i] === on) return;
+        soloed[i] = on;
+        solo.classList.toggle("down", on);
+        applyGains();
+      };
+      solo.addEventListener("pointerdown", (e) => { solo.setPointerCapture(e.pointerId); press(true); });
+      ["pointerup", "pointercancel", "lostpointercapture"].forEach(t => solo.addEventListener(t, () => press(false)));
+      solo.addEventListener("keydown", (e) => {
+        if ((e.key === " " || e.key === "Enter") && !e.repeat) { e.preventDefault(); press(true); }
+      });
+      solo.addEventListener("keyup", (e) => { if (e.key === " " || e.key === "Enter") press(false); });
+      solo.addEventListener("blur", () => press(false));
+      solo.addEventListener("contextmenu", (e) => e.preventDefault());
+      releasers.push(() => press(false));
+      set(1);
+      mixer.appendChild(strip);
+    });
+  }
+
+  playBtn.addEventListener("click", () => { playing ? pause() : play(); });
+  seek.addEventListener("pointerdown", () => { scrubbing = true; });
+  seek.addEventListener("input", () => seekTo(+seek.value));
+  const endScrub = () => { if (scrubbing) { scrubbing = false; seekTo(+seek.value); } };
+  seek.addEventListener("pointerup", endScrub);
+  seek.addEventListener("change", endScrub);
+  $("protect").addEventListener("change", () => {
+    pvDirty = true;
+    if (playing) { const p = position(); buildPreview(); startSources(p); }
+  });
+  // help / about popups: close with ×, Esc, or a click outside
+  [["helpBtn", "helpDlg"], ["aboutBtn", "aboutDlg"]].forEach(([btn, id]) => {
+    const dlg = $(id);
+    $(btn).addEventListener("click", () => dlg.showModal());
+    dlg.querySelector(".dlg-close").addEventListener("click", () => dlg.close());
+    // content fills the dialog edge to edge, so a click on the dialog itself is a backdrop click
+    dlg.addEventListener("click", (e) => { if (e.target === dlg) dlg.close(); });
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.code !== "Space" || playBtn.disabled || document.querySelector("dialog[open]")) return;
+    if (e.target.matches && e.target.matches("input[type=text], input[type=number], button, select, [role=slider]")) return;
+    e.preventDefault();
+    playing ? pause() : play();
+  });
+
+  updatePlayBtn();
+  renderMixer();
+  renderStems();
+  refreshName();
+})();
+</script>
+</body>
+</html>
