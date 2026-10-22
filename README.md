@@ -1,4 +1,4 @@
-# te-sp-1-stem-packer-player
+# SP-1 stem packer/player utility
 A single-page web tool for making and previewing stem files for the SP-1 stem player created by teenage engineering.
 Intended to be used with https://solderless.engineering/ to upload Stems onto your device.
 
