@@ -8,7 +8,7 @@ All conversions/playback runs within your browser.
 
 ## Usage
  
-Visit <github.io site add here later> to use this webpage, or download the html file within the repository and open that in a modern web browser.
+Visit https://dombeef.github.io/te-sp-1-stem-packer-player/stem-packer-player.html to use this webpage, or download the html file within the repository and open that in a modern web browser.
  
 ### Packing stems
  
